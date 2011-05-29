@@ -33,10 +33,16 @@ _FREE_TASK_IDS = []
 _TASK_IDS_BY_NAME = {}
 _FREE_TASK_IDS_BY_NAME = {}
 
+_now = datetime.datetime.utcnow
+
+def inject_now_method(method):
+    global _now
+    _now = method
 
 def _create(task_name, method, member, *args, **kwargs):
-    now = datetime.datetime.utcnow()
+    now = _now()
     task_id = uuid.uuid4()
+    logging.debug('Creating task %s at %s', task_id, now)
     task = {'id': task_id,
             'task_name': task_name,
             'method': method,
@@ -88,7 +94,6 @@ def ify(name=None, auto_update=True):
                     member = False
                 task_id = _create(task_name, method, member, *args, **kwargs)
                 progress = None
-                logging.debug('Starting task %s', task_id)
             rv = func(task_id=task_id, progress=progress, *args, **kwargs)
             if auto_update:
                 if isinstance(rv, types.GeneratorType):
@@ -136,8 +141,9 @@ def timeout(time, task_name=None):
         items = _TASKS.itervalues()
     for task in items:
         if task['updated_at'] < time and task['active']:
+            logging.debug('%s: %s < %s', task['id'], task['updated_at'], time)
             task['active'] = False
-            task['updated_at'] = datetime.datetime.utcnow()
+            task['updated_at'] = _now()
             _FREE_TASK_IDS.append(task['id'])
             if task_name not in _FREE_TASK_IDS_BY_NAME:
                 _FREE_TASK_IDS_BY_NAME[task['task_name']] = []
@@ -157,21 +163,21 @@ def run(task_id):
         method = getattr(task['args'][0], task['method'])
     else:
         method = task['method']
-    _TASKS[task_id]['updated_at'] = datetime.datetime.utcnow()
+    _TASKS[task_id]['updated_at'] = _now()
     return method(task_id=task['id'], progress=task['progress'],
                   *task['args'], **task['kwargs'])
 
 
 def update(task_id, progress):
     """Update the current task progress."""
-    _TASKS[task_id]['updated_at'] = datetime.datetime.utcnow()
+    _TASKS[task_id]['updated_at'] = _now()
     _TASKS[task_id]['progress'] = progress
 
 
 def finish(task_id):
     """Mark the task completed."""
-    _TASKS[task_id]['updated_at'] = datetime.datetime.utcnow()
-    _TASKS[task_id]['completed_at'] = datetime.datetime.utcnow()
+    _TASKS[task_id]['updated_at'] = _now()
+    _TASKS[task_id]['completed_at'] = _now()
     _TASKS[task_id]['active'] = False
     logging.debug('Finished task %s', task_id)
 

@@ -16,8 +16,8 @@
 #    under the License.
 
 import datetime
+import mock_datetime
 import task
-import testtime
 import unittest
 
 @task.ify('another_name')
@@ -101,6 +101,7 @@ class TaskTestCase(unittest.TestCase):
     """Test nova.task functionality"""
 
     def setUp(self):
+        task.inject_now_method(mock_datetime.utcnow)
         super(TaskTestCase, self).setUp()
 
     def test_finish_task(self):
@@ -210,15 +211,15 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(kwargs, ret)
 
     def test_rerun_old_tasks(self):
-        testtime.set_time_override()
+        mock_datetime.set_time_override()
         try:
             task_id1 = retry()
             task_id2 = retry()
-            testtime.advance_time_seconds(60)
+            mock_datetime.advance_time_seconds(60)
             task_id3 = retry()
             self.assertFalse(task.is_complete(task_id1))
             task.run(task_id1)
-            timeout = datetime.datetime.utcnow() - datetime.timedelta(seconds=30)
+            timeout = mock_datetime.utcnow() - datetime.timedelta(seconds=30)
             num = task.timeout(timeout)
             self.assertEqual(num, 1)
             task_id = task.claim()
@@ -228,24 +229,20 @@ class TaskTestCase(unittest.TestCase):
             self.assertTrue(task.is_complete(task_id2))
             self.assertFalse(task.is_complete(task_id3))
         finally:
-            testtime.clear_time_override()
+            mock_datetime.clear_time_override()
 
     def test_rerun_stored_tasks(self):
-        testtime.set_time_override()
+        mock_datetime.set_time_override()
         try:
             task_id1 = retry()
             task_id2 = retry()
-            testtime.advance_time_seconds(60)
+            mock_datetime.advance_time_seconds(60)
             task_id3 = retry()
-            # NOTE(vish): can't pickle with datetime overridden
-            now = datetime.datetime.utcnow()
-            testtime.clear_time_override()
             task.dump()
             task.load()
-            testtime.set_time_override(now)
             self.assertFalse(task.is_complete(task_id1))
             task.run(task_id1)
-            timeout = datetime.datetime.utcnow() - datetime.timedelta(seconds=30)
+            timeout = mock_datetime.utcnow() - datetime.timedelta(seconds=30)
             num = task.timeout(timeout)
             self.assertEqual(num, 1)
             task_id = task.claim()
@@ -255,4 +252,4 @@ class TaskTestCase(unittest.TestCase):
             self.assertTrue(task.is_complete(task_id2))
             self.assertFalse(task.is_complete(task_id3))
         finally:
-            testtime.clear_time_override()
+            mock_datetime.clear_time_override()

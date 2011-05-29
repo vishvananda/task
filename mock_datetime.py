@@ -20,28 +20,23 @@
 import datetime
 
 
-class DateTimeOverrider(object):
-    def __init__(self, override_time):
-        self.dt = datetime.datetime
-        self.override_time = override_time
+def utcnow():
+    """Overridden utcnow."""
+    if utcnow.override_time:
+        return utcnow.override_time
+    return datetime.datetime.utcnow()
 
-    def __getattr__(self, key):
-        return getattr(self.dt, key)
-
-    def utcnow(self):
-        """Overridden utcnow."""
-        return self.override_time
+utcnow.override_time = None
 
 
 def set_time_override(override_time=datetime.datetime.utcnow()):
-    """Override datetime.datetime.utcnow to return a constant time."""
-    if not isinstance(datetime.datetime, DateTimeOverrider):
-        datetime.datetime = DateTimeOverrider(override_time)
+    """Override utcnow to return a constant time."""
+    utcnow.override_time = override_time
 
 
 def advance_time_delta(timedelta):
     """Advance overriden time using a datetime.timedelta."""
-    datetime.datetime.override_time += timedelta
+    utcnow.override_time += timedelta
 
 
 def advance_time_seconds(seconds):
@@ -51,6 +46,5 @@ def advance_time_seconds(seconds):
 
 def clear_time_override():
     """Remove the overridden time."""
-    if isinstance(datetime.datetime, DateTimeOverrider):
-        datetime.datetime = datetime.datetime.dt
+    utcnow.override_time = None
 

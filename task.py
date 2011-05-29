@@ -19,13 +19,13 @@ Stores tasks and allows them to be run again later.
 """
 
 
+import datetime
 import functools
 import inspect
 import logging
 import pickle
 import types
 import uuid
-import utils
 
 
 _TASKS = {}
@@ -35,7 +35,7 @@ _FREE_TASK_IDS_BY_NAME = {}
 
 
 def _create(task_name, method, member, *args, **kwargs):
-    now = utils.utcnow()
+    now = datetime.datetime.utcnow()
     task_id = uuid.uuid4()
     task = {'id': task_id,
             'task_name': task_name,
@@ -137,7 +137,7 @@ def timeout(time, task_name=None):
     for task in items:
         if task['updated_at'] < time and task['active']:
             task['active'] = False
-            task['updated_at'] = utils.utcnow()
+            task['updated_at'] = datetime.datetime.utcnow()
             _FREE_TASK_IDS.append(task['id'])
             if task_name not in _FREE_TASK_IDS_BY_NAME:
                 _FREE_TASK_IDS_BY_NAME[task['task_name']] = []
@@ -157,21 +157,21 @@ def run(task_id):
         method = getattr(task['args'][0], task['method'])
     else:
         method = task['method']
-    _TASKS[task_id]['updated_at'] = utils.utcnow()
+    _TASKS[task_id]['updated_at'] = datetime.datetime.utcnow()
     return method(task_id=task['id'], progress=task['progress'],
                   *task['args'], **task['kwargs'])
 
 
 def update(task_id, progress):
     """Update the current task progress."""
-    _TASKS[task_id]['updated_at'] = utils.utcnow()
+    _TASKS[task_id]['updated_at'] = datetime.datetime.utcnow()
     _TASKS[task_id]['progress'] = progress
 
 
 def finish(task_id):
     """Mark the task completed."""
-    _TASKS[task_id]['updated_at'] = utils.utcnow()
-    _TASKS[task_id]['completed_at'] = utils.utcnow()
+    _TASKS[task_id]['updated_at'] = datetime.datetime.utcnow()
+    _TASKS[task_id]['completed_at'] = datetime.datetime.utcnow()
     _TASKS[task_id]['active'] = False
     logging.debug('Finished task %s', task_id)
 

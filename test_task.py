@@ -17,7 +17,7 @@
 
 import datetime
 import task
-import utils
+import testtime
 import unittest
 
 @task.ify('another_name')
@@ -210,15 +210,15 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(kwargs, ret)
 
     def test_rerun_old_tasks(self):
-        utils.set_time_override()
+        testtime.set_time_override()
         try:
             task_id1 = retry()
             task_id2 = retry()
-            utils.advance_time_seconds(60)
+            testtime.advance_time_seconds(60)
             task_id3 = retry()
             self.assertFalse(task.is_complete(task_id1))
             task.run(task_id1)
-            timeout = utils.utcnow() - datetime.timedelta(seconds=30)
+            timeout = datetime.datetime.utcnow() - datetime.timedelta(seconds=30)
             num = task.timeout(timeout)
             self.assertEqual(num, 1)
             task_id = task.claim()
@@ -228,20 +228,24 @@ class TaskTestCase(unittest.TestCase):
             self.assertTrue(task.is_complete(task_id2))
             self.assertFalse(task.is_complete(task_id3))
         finally:
-            utils.clear_time_override()
+            testtime.clear_time_override()
 
     def test_rerun_stored_tasks(self):
-        utils.set_time_override()
+        testtime.set_time_override()
         try:
             task_id1 = retry()
             task_id2 = retry()
-            utils.advance_time_seconds(60)
+            testtime.advance_time_seconds(60)
             task_id3 = retry()
+            # NOTE(vish): can't pickle with datetime overridden
+            now = datetime.datetime.utcnow()
+            testtime.clear_time_override()
             task.dump()
             task.load()
+            testtime.set_time_override(now)
             self.assertFalse(task.is_complete(task_id1))
             task.run(task_id1)
-            timeout = utils.utcnow() - datetime.timedelta(seconds=30)
+            timeout = datetime.datetime.utcnow() - datetime.timedelta(seconds=30)
             num = task.timeout(timeout)
             self.assertEqual(num, 1)
             task_id = task.claim()
@@ -251,4 +255,4 @@ class TaskTestCase(unittest.TestCase):
             self.assertTrue(task.is_complete(task_id2))
             self.assertFalse(task.is_complete(task_id3))
         finally:
-            utils.clear_time_override()
+            testtime.clear_time_override()

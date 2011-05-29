@@ -14,36 +14,34 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-"""Time helper functions."""
+"""Time testing helper functions."""
 
 
 import datetime
-import time
 
 
-def utcnow():
-    """Overridable version of datetime.datetime.utcnow."""
-    if utcnow.override_time:
-        return utcnow.override_time
-    return datetime.datetime.utcnow()
+class DateTimeOverrider(object):
+    def __init__(self, override_time):
+        self.dt = datetime.datetime
+        self.override_time = override_time
 
+    def __getattr__(self, key):
+        return getattr(self.dt, key)
 
-utcnow.override_time = None
-
-
-def utcnow_ts():
-    """Timestamp version of our utcnow function."""
-    return time.mktime(utcnow().timetuple())
+    def utcnow(self):
+        """Overridden utcnow."""
+        return self.override_time
 
 
 def set_time_override(override_time=datetime.datetime.utcnow()):
     """Override datetime.datetime.utcnow to return a constant time."""
-    utcnow.override_time = override_time
+    if not isinstance(datetime.datetime, DateTimeOverrider):
+        datetime.datetime = DateTimeOverrider(override_time)
 
 
 def advance_time_delta(timedelta):
     """Advance overriden time using a datetime.timedelta."""
-    utcnow.override_time += timedelta
+    datetime.datetime.override_time += timedelta
 
 
 def advance_time_seconds(seconds):
@@ -53,4 +51,6 @@ def advance_time_seconds(seconds):
 
 def clear_time_override():
     """Remove the overridden time."""
-    utcnow.override_time = None
+    if isinstance(datetime.datetime, DateTimeOverrider):
+        datetime.datetime = datetime.datetime.dt
+

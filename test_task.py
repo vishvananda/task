@@ -20,6 +20,7 @@ import mock_datetime
 import task
 import unittest
 
+
 @task.ify('another_name')
 def one_name(task_id, progress):
     """Finish the task and return the id."""

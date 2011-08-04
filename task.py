@@ -23,15 +23,12 @@ import datetime
 import functools
 import inspect
 import logging
-import pickle
 import types
 import uuid
 
 
-_TASKS = {}
-_FREE_TASK_IDS = []
-_TASK_IDS_BY_NAME = {}
-_FREE_TASK_IDS_BY_NAME = {}
+import db
+
 
 _now = datetime.datetime.utcnow
 
@@ -51,12 +48,9 @@ def _create(task_name, method, is_member, *args, **kwargs):
             'kwargs': kwargs,
             'created_at': now,
             'updated_at': now,
-            'active': True,
+            'is_active': True,
             'progress': None}
-    _TASKS[task_id] = task
-    if task_name not in _TASK_IDS_BY_NAME:
-        _TASK_IDS_BY_NAME[task_name] = []
-    _TASK_IDS_BY_NAME[task_name].append(task_id)
+    db.task_create(task)
     return task_id
 
 
@@ -111,20 +105,13 @@ def ify(name=None, auto_update=True):
 
 def get(task_id):
     """Get task from id."""
-    return _TASKS.get(task_id)
+    return db.task_get(task_id)
 
 
 def claim(task_name=None):
     """Get a free task_id if available optionally by task_name."""
     try:
-        if task_name:
-            task_id = _FREE_TASK_IDS_BY_NAME.get(task_name, []).pop()
-            _FREE_TASK_IDS.remove(task_id)
-        else:
-            task_id = _FREE_TASK_IDS.pop()
-            task_name = _TASKS[task_id]['task_name']
-            _FREE_TASK_IDS_BY_NAME[task_name].remove(task_id)
-        return task_id
+        return db.task_pop(task_name)
     except IndexError:
         return None
 
@@ -133,23 +120,7 @@ def timeout(time, task_name=None):
     """Free tasks by time and optional task_name.
 
     :returns: number of tasks freed"""
-    num_freed = 0
-    if task_name:
-        items = [_TASKS[task_id] for task_id
-                 in _TASK_IDS_BY_NAME.get(task_name, [])]
-    else:
-        items = _TASKS.itervalues()
-    for task in items:
-        if task['updated_at'] < time and task['active']:
-            logging.debug('%s: %s < %s', task['id'], task['updated_at'], time)
-            task['active'] = False
-            task['updated_at'] = _now()
-            _FREE_TASK_IDS.append(task['id'])
-            if task_name not in _FREE_TASK_IDS_BY_NAME:
-                _FREE_TASK_IDS_BY_NAME[task['task_name']] = []
-            _FREE_TASK_IDS_BY_NAME[task['task_name']].append(task['id'])
-            num_freed += 1
-    return num_freed
+    return db.task_timeout(time, task_name)
 
 
 def run(task_id):
@@ -158,66 +129,55 @@ def run(task_id):
     Underlying method will receive two kwargs:
         task_id = id of the current task for updating
         progress = last progress passed to task_update"""
-    task = _TASKS[task_id]
+    task = db.task_get(task_id)
     if task['is_member']:
         method = getattr(task['args'][0], task['method'])
     else:
         method = task['method']
-    _TASKS[task_id]['updated_at'] = _now()
+    db.task_update(task_id, {'updated_at', _now()})
     return method(task_id=task['id'], progress=task['progress'],
                   *task['args'], **task['kwargs'])
 
 
 def update(task_id, progress):
     """Update the current task progress."""
-    _TASKS[task_id]['updated_at'] = _now()
-    _TASKS[task_id]['progress'] = progress
+    values = {}
+    values['updated_at'] = _now()
+    values['progress'] = progress
+    db.task_update(task_id, values)
+    logging.debug('Updated task %s', task_id)
 
 
 def finish(task_id):
     """Mark the task completed."""
-    _TASKS[task_id]['updated_at'] = _now()
-    _TASKS[task_id]['completed_at'] = _now()
-    _TASKS[task_id]['active'] = False
+    values = {}
+    values['updated_at'] = _now()
+    values['completed_at'] = _now()
+    values['is_active'] = False
+    db.task_update(task_id, values)
     logging.debug('Finished task %s', task_id)
 
 
 def is_active(task_id):
     """True if the task is active."""
     try:
-        return _TASKS[task_id]['active']
-    except KeyError:
+        return db.task_get(task_id)['is_active']
+    except db.TaskNotFound:
         return False
 
 
 def is_complete(task_id):
     """Completed if the task is done."""
     try:
-        return _TASKS[task_id]['completed_at'] is not None
-    except KeyError:
+        return db.task_get(task_id)['completed_at'] is not None
+    except db.TaskNotFound:
         return False
 
 
 def exists(task_id):
     """True if the task exists."""
-    return task_id in _TASKS
-
-
-def dump():
-    """Dump task data."""
-    data = {'_TASKS': _TASKS,
-            '_FREE_TASK_IDS': _FREE_TASK_IDS,
-            '_TASK_IDS_BY_NAME': _TASK_IDS_BY_NAME,
-            '_FREE_TASK_IDS_BY_NAME': _FREE_TASK_IDS_BY_NAME}
-    with open('task.data', 'wb') as f:
-        pickle.dump(data, f, pickle.HIGHEST_PROTOCOL)
-
-
-def load():
-    """Load task data."""
-    with open('task.data', 'rb') as f:
-        data = pickle.load(f)
-    _TASKS = data['_TASKS']
-    _FREE_TASK_IDS = data['_FREE_TASK_IDS']
-    _TASK_IDS_BY_NAME = data['_TASK_IDS_BY_NAME']
-    _FREE_TASK_IDS_BY_NAME = data['_FREE_TASK_IDS_BY_NAME']
+    try:
+        db.task_get(task_id)
+        return True
+    except db.TaskNotFound:
+        return False

@@ -35,10 +35,11 @@ _now = datetime.datetime.utcnow
 def inject_now_method(method):
     global _now
     _now = method
+    db.inject_now_method(method)
 
 def _create(task_name, method, is_member, *args, **kwargs):
     now = _now()
-    task_id = uuid.uuid4()
+    task_id = str(uuid.uuid4())
     logging.debug('Creating task %s at %s', task_id, now)
     task = {'id': task_id,
             'task_name': task_name,
@@ -86,7 +87,8 @@ def ify(name=None, auto_update=True):
                 else:
                     method = wrapped
                     is_member = False
-                task_id = _create(task_name, method, is_member, *args, **kwargs)
+                task_id = _create(task_name, method, is_member,
+                                  *args, **kwargs)
                 progress = None
             rv = func(task_id=task_id, progress=progress, *args, **kwargs)
             if auto_update:
@@ -111,7 +113,7 @@ def get(task_id):
 def claim(task_name=None):
     """Get a free task_id if available optionally by task_name."""
     try:
-        return db.task_pop(task_name)
+        return db.task_pop(task_name)['id']
     except IndexError:
         return None
 
@@ -134,18 +136,19 @@ def run(task_id):
         method = getattr(task['args'][0], task['method'])
     else:
         method = task['method']
-    db.task_update(task_id, {'updated_at', _now()})
+        db.task_update(task_id, {'updated_at': _now()})
     return method(task_id=task['id'], progress=task['progress'],
                   *task['args'], **task['kwargs'])
 
 
 def update(task_id, progress):
     """Update the current task progress."""
+    now = _now()
     values = {}
-    values['updated_at'] = _now()
+    values['updated_at'] = now
     values['progress'] = progress
     db.task_update(task_id, values)
-    logging.debug('Updated task %s', task_id)
+    logging.debug('Updated task %s at %s', task_id, now)
 
 
 def finish(task_id):

@@ -19,6 +19,7 @@ import datetime
 import mock_datetime
 import task
 import unittest
+import db
 
 
 @task.ify('another_name')
@@ -102,6 +103,7 @@ class TaskTestCase(unittest.TestCase):
     """Test nova.task functionality"""
 
     def setUp(self):
+        db.connect('sqlite://')
         task.inject_now_method(mock_datetime.utcnow)
         super(TaskTestCase, self).setUp()
 
@@ -142,7 +144,7 @@ class TaskTestCase(unittest.TestCase):
         self.assertTrue(task.exists(task_id))
         self.assertTrue(task.is_complete(task_id))
 
-    def test_complex_stored_task(self):
+    def test_complex_task(self):
         rval = complex_task(10)
         task_id = rval.next()
         self.assertTrue(task.exists(task_id))
@@ -152,8 +154,6 @@ class TaskTestCase(unittest.TestCase):
             total += rval.next()
         self.assertTrue(task.exists(task_id))
         self.assertFalse(task.is_complete(task_id))
-        task.dump()
-        task.load()
         rval = task.run(task_id)
         for x in xrange(5):
             total += rval.next()
@@ -174,30 +174,16 @@ class TaskTestCase(unittest.TestCase):
         self.assertTrue(task.is_complete(task_id))
         self.assertEqual(value, 42)
 
-    def test_object_retry_stored(self):
+    def test_object_retry_deleted_object(self):
         obj = ObjectWithTasks(42)
         task_id = obj.retry_value()
         self.assertTrue(task.exists(task_id))
         self.assertFalse(task.is_complete(task_id))
-        task.dump()
-        task.load()
+        del obj
         value = task.run(task_id)
         self.assertTrue(task.exists(task_id))
         self.assertTrue(task.is_complete(task_id))
         self.assertEqual(value, 42)
-
-    def test_object_retry_stored_changed_value(self):
-        obj = ObjectWithTasks(42)
-        task_id = obj.retry_value()
-        self.assertTrue(task.exists(task_id))
-        self.assertFalse(task.is_complete(task_id))
-        task.dump()
-        task.load()
-        obj.value = 69
-        value = task.run(task_id)
-        self.assertTrue(task.exists(task_id))
-        self.assertTrue(task.is_complete(task_id))
-        self.assertEqual(value, 69)
 
     def test_retry_same_args(self):
         args = (75, 'arbitrary', {'more': 7.5})
@@ -220,29 +206,10 @@ class TaskTestCase(unittest.TestCase):
             task_id3 = retry()
             self.assertFalse(task.is_complete(task_id1))
             task.run(task_id1)
-            timeout = mock_datetime.utcnow() - datetime.timedelta(seconds=30)
-            num = task.timeout(timeout)
-            self.assertEqual(num, 1)
-            task_id = task.claim()
-            self.assertEqual(task_id, task_id2)
-            self.assertEqual(task.claim(), None)
-            task.run(task_id)
-            self.assertTrue(task.is_complete(task_id2))
-            self.assertFalse(task.is_complete(task_id3))
-        finally:
-            mock_datetime.clear_time_override()
-
-    def test_rerun_stored_tasks(self):
-        mock_datetime.set_time_override()
-        try:
-            task_id1 = retry()
-            task_id2 = retry()
-            mock_datetime.advance_time_seconds(60)
-            task_id3 = retry()
-            task.dump()
-            task.load()
-            self.assertFalse(task.is_complete(task_id1))
-            task.run(task_id1)
+            import logging
+            logging.warn(task.get(task_id1)['updated_at'])
+            logging.warn(task.get(task_id2)['updated_at'])
+            logging.warn(task.get(task_id3)['updated_at'])
             timeout = mock_datetime.utcnow() - datetime.timedelta(seconds=30)
             num = task.timeout(timeout)
             self.assertEqual(num, 1)

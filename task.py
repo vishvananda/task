@@ -39,14 +39,14 @@ def inject_now_method(method):
     global _now
     _now = method
 
-def _create(task_name, method, member, *args, **kwargs):
+def _create(task_name, method, is_member, *args, **kwargs):
     now = _now()
     task_id = uuid.uuid4()
     logging.debug('Creating task %s at %s', task_id, now)
     task = {'id': task_id,
             'task_name': task_name,
             'method': method,
-            'member': member,
+            'is_member': is_member,
             'args': args,
             'kwargs': kwargs,
             'created_at': now,
@@ -88,11 +88,11 @@ def ify(name=None, auto_update=True):
                 task_name = name or func.__name__
                 if _is_member(wrapped, args):
                     method = func.__name__
-                    member = True
+                    is_member = True
                 else:
                     method = wrapped
-                    member = False
-                task_id = _create(task_name, method, member, *args, **kwargs)
+                    is_member = False
+                task_id = _create(task_name, method, is_member, *args, **kwargs)
                 progress = None
             rv = func(task_id=task_id, progress=progress, *args, **kwargs)
             if auto_update:
@@ -159,7 +159,7 @@ def run(task_id):
         task_id = id of the current task for updating
         progress = last progress passed to task_update"""
     task = _TASKS[task_id]
-    if task['member']:
+    if task['is_member']:
         method = getattr(task['args'][0], task['method'])
     else:
         method = task['method']

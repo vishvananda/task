@@ -98,9 +98,9 @@ def ify(name=None, auto_update=True):
                             update(task_id, orig_rv)
                             yield orig_rv
                         finish(task_id)
-                    return gen()
+                    return task_id, gen()
                 update(task_id, rv)
-            return rv
+            return task_id, rv
         return wrapped
     return wrapper
 
@@ -137,8 +137,9 @@ def run(task_id):
     else:
         method = task['method']
         db.task_update(task_id, {'updated_at': _now()})
+    # NOTE(vish): the [1] is because we don't return the task_id
     return method(task_id=task['id'], progress=task['progress'],
-                  *task['args'], **task['kwargs'])
+                  *task['args'], **task['kwargs'])[1]
 
 
 def update(task_id, progress):

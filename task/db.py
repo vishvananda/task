@@ -44,6 +44,10 @@ _SQL_CONNECTION = None
 def connect(sql_connection):
     """Register Models and create metadata."""
     global _SQL_CONNECTION
+    global _ENGINE
+    global _MAKER
+    _ENGINE = None
+    _MAKER = None
     _SQL_CONNECTION = sql_connection
     get_session()
     Task.metadata.create_all(_ENGINE)

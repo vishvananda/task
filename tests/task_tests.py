@@ -32,15 +32,12 @@ def finish(task_id, progress):
     return task_id
 
 @task.ify()
-def exception_retry(*args, **kwargs):
+def retry(*args, **kwargs):
     """Complete the task if it is re-run."""
     task_id = kwargs.pop('task_id')
     progress = kwargs.pop('progress')
     if progress is None:
-        # NOTE(vish): The only way to not finish with auto_update=True
-        #             is to raise an Exception
-        task.update(task_id, task_id)
-        raise Exception()
+        raise task.Failure('fail')
     return (args, kwargs)
 
 @task.ify(auto_update=False)
@@ -49,8 +46,7 @@ def manual_retry(*args, **kwargs):
     task_id = kwargs.pop('task_id')
     progress = kwargs.pop('progress')
     if progress is None:
-        # NOTE(vish): this is simulating the task failing
-        task.update(task_id, task_id)
+        task.fail(task_id, 'fail')
         return 'fail'
     task.finish(task_id)
     return (args, kwargs)
@@ -61,9 +57,20 @@ def generator_retry(*args, **kwargs):
     task_id = kwargs.pop('task_id')
     progress = kwargs.pop('progress')
     if progress is None:
-        # NOTE(vish): this is simulating the task failing
-        yield 'fail'
+        raise task.Failure('fail')
+    yield (args, kwargs)
     # NOTE(vish): the second call will stop the iteration and finish
+
+@task.ify(auto_update=False)
+def nofail(*args, **kwargs):
+    """Complete the task if it is re-run without failing."""
+    task_id = kwargs.pop('task_id')
+    progress = kwargs.pop('progress')
+    if progress is None:
+        task.update(task_id, 'one')
+        return 'one'
+    task.finish(task_id)
+    return (args, kwargs)
 
 @task.ify()
 def complex_task(number, *args, **kwargs):
@@ -82,16 +89,13 @@ class ObjectWithTasks(object):
         super(ObjectWithTasks, self).__init__()
         self.value = value
 
-    @task.ify(auto_update=False)
+    @task.ify()
     def retry_value(self, *args, **kwargs):
         """Complete the task if it is re-run."""
         task_id = kwargs.pop('task_id')
         progress = kwargs.pop('progress')
         if progress is None:
-            task.update(task_id, task_id)
-            # NOTE(vish): this is simulating the task failing
-            return 'fail'
-        task.finish(task_id)
+            raise task.Failure('fail')
         return self.value
 
 
@@ -117,33 +121,37 @@ class TaskTestCase(unittest.TestCase):
         self.assertEqual(task.get(task_id)['task_name'], 'another_name')
 
     def test_retry_task(self):
-        task_id  = exception_retry()
-        try:
-            task.run(task_id)
-        except Exception:
-            pass
+        task_id  = retry()
+        result = task.run(task_id)
+        self.assertEqual('fail', result)
         self.assertTrue(task.exists(task_id))
         self.assertFalse(task.is_complete(task_id))
-        task.run(task_id)
+        result = task.run(task_id)
+        self.assertNotEqual('fail', result)
         self.assertTrue(task.exists(task_id))
         self.assertTrue(task.is_complete(task_id))
 
     def test_manual_retry_task(self):
         task_id = manual_retry()
-        task.run(task_id)
+        result = task.run(task_id)
+        self.assertEqual('fail', result)
         self.assertTrue(task.exists(task_id))
         self.assertFalse(task.is_complete(task_id))
-        task.run(task_id)
+        result = task.run(task_id)
+        self.assertNotEqual('fail', result)
         self.assertTrue(task.exists(task_id))
         self.assertTrue(task.is_complete(task_id))
 
     def test_generator_retry_task(self):
         task_id = generator_retry()
         rval = task.run(task_id)
-        rval.next()
+        result = rval.next()
+        self.assertEqual('fail', result)
         self.assertTrue(task.exists(task_id))
         self.assertFalse(task.is_complete(task_id))
         rval = task.run(task_id)
+        result = rval.next()
+        self.assertNotEqual('fail', result)
         self.assertRaises(StopIteration, rval.next)
         self.assertTrue(task.exists(task_id))
         self.assertTrue(task.is_complete(task_id))
@@ -171,13 +179,15 @@ class TaskTestCase(unittest.TestCase):
     def test_object_retry(self):
         obj = ObjectWithTasks(42)
         task_id = obj.retry_value()
-        task.run(task_id)
+        result = task.run(task_id)
+        self.assertEqual('fail', result)
         self.assertTrue(task.exists(task_id))
         self.assertFalse(task.is_complete(task_id))
-        value = task.run(task_id)
+        result = task.run(task_id)
+        self.assertNotEqual('fail', result)
         self.assertTrue(task.exists(task_id))
         self.assertTrue(task.is_complete(task_id))
-        self.assertEqual(value, 42)
+        self.assertEqual(result, 42)
 
     def test_object_retry_deleted_object(self):
         obj = ObjectWithTasks(42)
@@ -186,21 +196,22 @@ class TaskTestCase(unittest.TestCase):
         self.assertTrue(task.exists(task_id))
         self.assertFalse(task.is_complete(task_id))
         del obj
-        value = task.run(task_id)
+        result = task.run(task_id)
+        self.assertNotEqual('fail', result)
         self.assertTrue(task.exists(task_id))
         self.assertTrue(task.is_complete(task_id))
-        self.assertEqual(value, 42)
+        self.assertEqual(result, 42)
 
     def test_retry_same_args(self):
         args = (75, 'arbitrary', {'more': 7.5})
-        task_id = manual_retry(*args)
+        task_id = retry(*args)
         task.run(task_id)
         ret, _ = task.run(task_id)
         self.assertEqual(args, ret)
 
     def test_retry_same_kwargs(self):
         kwargs = {'num': 75, 'str': 'arbitrary', 'dict': {'more': 7.5}}
-        task_id = manual_retry(**kwargs)
+        task_id = retry(**kwargs)
         task.run(task_id)
         _, ret = task.run(task_id)
         self.assertEqual(kwargs, ret)
@@ -208,12 +219,12 @@ class TaskTestCase(unittest.TestCase):
     def test_rerun_old_tasks(self):
         mock_datetime.set_time_override()
         try:
-            task_id1 = manual_retry()
+            task_id1 = nofail()
             task.run(task_id1)
-            task_id2 = manual_retry()
+            task_id2 = nofail()
             task.run(task_id2)
             mock_datetime.advance_time_seconds(60)
-            task_id3 = manual_retry()
+            task_id3 = nofail()
             task.run(task_id3)
             self.assertFalse(task.is_complete(task_id1))
             task.run(task_id1)

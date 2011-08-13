@@ -30,12 +30,19 @@ import uuid
 import db
 
 
+class Failure(Exception):
+    def __init__(self, progress):
+        self.progress = progress
+
+
 _now = datetime.datetime.utcnow
+
 
 def inject_now_method(method):
     global _now
     _now = method
     db.inject_now_method(method)
+
 
 def _create(task_name, method, is_member, *args, **kwargs):
     now = _now()
@@ -49,7 +56,7 @@ def _create(task_name, method, is_member, *args, **kwargs):
             'kwargs': kwargs,
             'created_at': now,
             'updated_at': now,
-            'is_active': True,
+            'is_active': False,
             'progress': None}
     db.task_create(task)
     return task_id
@@ -79,19 +86,37 @@ def ify(name=None, auto_update=True):
             if 'task_id' in kwargs:
                 task_id = kwargs.pop('task_id')
                 progress = kwargs.pop('progress')
-                rv = func(task_id=task_id, progress=progress, *args, **kwargs)
-                if auto_update:
-                    if isinstance(rv, types.GeneratorType):
-                        def gen():
-                            for orig_rv in rv:
-                                update(task_id, orig_rv)
-                                yield orig_rv
-                            finish(task_id)
-                        return gen()
-                    else:
-                        update(task_id, rv)
-                        finish(task_id)
-                return rv
+                if not auto_update:
+                    return func(task_id=task_id, progress=progress, *args, **kwargs)
+
+                try:
+                    rv = func(task_id=task_id, progress=progress, *args, **kwargs)
+                except Failure as ex:
+                    fail(task_id, ex.progress)
+                    return ex.progress
+                except Exception as ex:
+                    fail(task_id, ex)
+                    raise
+                if not isinstance(rv, types.GeneratorType):
+                    update(task_id, rv)
+                    finish(task_id)
+                    return rv
+
+                def gen():
+                    try:
+                        for orig_rv in rv:
+                            update(task_id, orig_rv)
+                            yield orig_rv
+                    except Failure as ex:
+                        fail(task_id, ex.progress)
+                        yield ex.progress
+                    except Exception as ex:
+                        fail(task_id, ex)
+                        raise StopIteration
+                    finish(task_id)
+
+                return gen()
+
             else:
                 task_name = name or func.__name__
                 if _is_member(wrapped, args):
@@ -138,10 +163,20 @@ def run(task_id):
         method = getattr(task['args'][0], task['method'])
     else:
         method = task['method']
-        db.task_update(task_id, {'updated_at': _now()})
-    # NOTE(vish): the [1] is because we don't return the task_id
+    db.task_start(task_id)
     return method(task_id=task['id'], progress=task['progress'],
                   *task['args'], **task['kwargs'])
+
+
+def fail(task_id, progress):
+    """Update the current task progress."""
+    now = _now()
+    values = {}
+    values['updated_at'] = now
+    values['is_active'] = False
+    values['progress'] = progress
+    db.task_update(task_id, values)
+    logging.debug('Failed task %s at %s', task_id, now)
 
 
 def update(task_id, progress):

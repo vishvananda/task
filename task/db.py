@@ -24,7 +24,7 @@ Some portions borrowed Openstack Compute.
 import datetime
 
 from sqlalchemy import exc, orm, create_engine
-from sqlalchemy import Boolean, Column, DateTime, String, PickleType
+from sqlalchemy import Boolean, Column, DateTime, Integer, PickleType, String
 from sqlalchemy.ext import declarative
 
 
@@ -98,6 +98,7 @@ class Task(declarative.declarative_base()):
     is_member = Column(Boolean)
     is_active = Column(Boolean, default=True)
     completed_at = Column(DateTime)
+    attempts = Column(Integer, default=0)
     method = Column(PickleType)
     progress = Column(PickleType)
     args = Column(PickleType)
@@ -187,8 +188,8 @@ def task_timeout(time, task_name=None):
                     filter_by(completed_at=None)
     if task_name:
         query = query.filter_by(task_name=task_name)
-    result = query.update({'is_active': False,
-                           'updated_at': _now()},
+    result = query.update({Task.is_active: False,
+                           Task.updated_at: _now()},
                            synchronize_session='fetch')
     return result
 
@@ -217,6 +218,16 @@ def task_create(values):
     task_ref.update(values)
     task_ref.save()
     return task_ref
+
+
+def task_start(task_id):
+    session = get_session()
+    with session.begin():
+        session.query(Task).\
+                filter_by(id=task_id).\
+                update({Task.attempts: Task.attempts + 1,
+                        Task.updated_at: _now(),
+                        Task.is_active: True})
 
 
 def task_update(task_id, values):

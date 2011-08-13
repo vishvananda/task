@@ -95,7 +95,7 @@ def ify(name=None, auto_update=True):
                     fail(task_id, ex.progress)
                     return ex.progress
                 except Exception as ex:
-                    fail(task_id, ex)
+                    fail(task_id, None)
                     raise
                 if not isinstance(rv, types.GeneratorType):
                     update(task_id, rv)
@@ -111,7 +111,7 @@ def ify(name=None, auto_update=True):
                         fail(task_id, ex.progress)
                         yield ex.progress
                     except Exception as ex:
-                        fail(task_id, ex)
+                        fail(task_id, None)
                         raise StopIteration
                     finish(task_id)
 
@@ -168,13 +168,14 @@ def run(task_id):
                   *task['args'], **task['kwargs'])
 
 
-def fail(task_id, progress):
-    """Update the current task progress."""
+def fail(task_id, progress=None):
+    """Fail the current task with optional progress."""
     now = _now()
     values = {}
     values['updated_at'] = now
     values['is_active'] = False
-    values['progress'] = progress
+    if progress:
+        values['progress'] = progress
     db.task_update(task_id, values)
     logging.debug('Failed task %s at %s', task_id, now)
 

@@ -227,10 +227,6 @@ class TaskTestCase(unittest.TestCase):
             task.run(task_id3)
             self.assertFalse(task.is_complete(task_id1))
             task.run(task_id1)
-            import logging
-            logging.warn(task.get(task_id1)['updated_at'])
-            logging.warn(task.get(task_id2)['updated_at'])
-            logging.warn(task.get(task_id3)['updated_at'])
             timeout = mock_datetime.utcnow() - datetime.timedelta(seconds=30)
             num = task.timeout(timeout)
             self.assertEqual(num, 1)

@@ -184,3 +184,8 @@ def exists(task_id):
         return True
     except db.TaskNotFound:
         return False
+
+
+def setup_db(sql_connection='sqlite:///task.sqlite'):
+    """True if the task exists."""
+    db.connect(sql_connection)

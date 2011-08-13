@@ -1,9 +1,16 @@
 task.py
 =======
 
-Happy python library for keeping track of tasks and rerunning them.  Starting a new task is as easy as using a decorator:
+Happy python library for keeping track of tasks and rerunning them.  Starting a new task is easy:
+
+  import task
 
   @task.ify()
+  def run(**kwargs):
+     print kwargs['task_id']
+
+  task.setup_db('sqlite://') # in memory db
+  run()
 
 The wrapped method needs to accept **kwargs. It will be passed two kwargs: task_id and progress.  Task_id holds the identifier for the task should you need it.  Progress holds the last data you returned from the method.
 

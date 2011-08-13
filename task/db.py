@@ -51,6 +51,7 @@ def connect(sql_connection):
 
 def get_session(autocommit=True, expire_on_commit=False):
     """Helper method to grab session"""
+    global _SQL_CONNECTION
     global _ENGINE
     global _MAKER
     if not _MAKER:

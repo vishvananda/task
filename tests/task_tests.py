@@ -16,11 +16,10 @@
 #    under the License.
 
 import datetime
+import unittest
+
 import mock_datetime
 import task
-import unittest
-import db
-
 
 @task.ify('another_name')
 def one_name(task_id, progress):
@@ -103,7 +102,7 @@ class TaskTestCase(unittest.TestCase):
     """Test nova.task functionality"""
 
     def setUp(self):
-        db.connect('sqlite://')
+        task.setup_db('sqlite://')
         task.inject_now_method(mock_datetime.utcnow)
         super(TaskTestCase, self).setUp()
 

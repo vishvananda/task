@@ -78,10 +78,9 @@ def complex_task(number, *args, **kwargs):
     progress = kwargs.pop('progress')
     # NOTE(vish): tasks have to be smart enough to give
     #             the same results if restarted
-    start = 0
-    if progress and isinstance(progress, int):
-        start = progress + 1
-    for x in xrange(start, number):
+    progress = progress or -1
+    progress += 1
+    for x in xrange(progress, number):
         yield x
 
 class ObjectWithTasks(object):

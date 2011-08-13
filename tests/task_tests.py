@@ -24,24 +24,23 @@ import task
 @task.ify('another_name')
 def one_name(task_id, progress):
     """Finish the task and return the id."""
-    task.finish(task_id)
     return task_id
 
 @task.ify()
 def finish(task_id, progress):
     """Finish the task and return the id."""
-    task.finish(task_id)
     return task_id
 
 @task.ify()
-def retry(*args, **kwargs):
+def exception_retry(*args, **kwargs):
     """Complete the task if it is re-run."""
     task_id = kwargs.pop('task_id')
     progress = kwargs.pop('progress')
     if progress is None:
-        # NOTE(vish): this is simulating the task failing
-        return 'fail'
-    task.finish(task_id)
+        # NOTE(vish): The only way to not finish with auto_update=True
+        #             is to raise an Exception
+        task.update(task_id, task_id)
+        raise Exception()
     return (args, kwargs)
 
 @task.ify(auto_update=False)
@@ -83,7 +82,7 @@ class ObjectWithTasks(object):
         super(ObjectWithTasks, self).__init__()
         self.value = value
 
-    @task.ify()
+    @task.ify(auto_update=False)
     def retry_value(self, *args, **kwargs):
         """Complete the task if it is re-run."""
         task_id = kwargs.pop('task_id')
@@ -105,18 +104,24 @@ class TaskTestCase(unittest.TestCase):
         super(TaskTestCase, self).setUp()
 
     def test_finish_task(self):
-        task_id, _ = finish()
+        task_id = finish()
+        task.run(task_id)
         self.assertTrue(task.exists(task_id))
         self.assertTrue(task.is_complete(task_id))
 
     def test_change_task_name(self):
-        task_id, _ = one_name()
+        task_id = one_name()
+        task.run(task_id)
         self.assertTrue(task.exists(task_id))
         self.assertTrue(task.is_complete(task_id))
         self.assertEqual(task.get(task_id)['task_name'], 'another_name')
 
     def test_retry_task(self):
-        task_id, _ = retry()
+        task_id  = exception_retry()
+        try:
+            task.run(task_id)
+        except Exception:
+            pass
         self.assertTrue(task.exists(task_id))
         self.assertFalse(task.is_complete(task_id))
         task.run(task_id)
@@ -124,7 +129,8 @@ class TaskTestCase(unittest.TestCase):
         self.assertTrue(task.is_complete(task_id))
 
     def test_manual_retry_task(self):
-        task_id, _ = manual_retry()
+        task_id = manual_retry()
+        task.run(task_id)
         self.assertTrue(task.exists(task_id))
         self.assertFalse(task.is_complete(task_id))
         task.run(task_id)
@@ -132,7 +138,8 @@ class TaskTestCase(unittest.TestCase):
         self.assertTrue(task.is_complete(task_id))
 
     def test_generator_retry_task(self):
-        task_id, rval = generator_retry()
+        task_id = generator_retry()
+        rval = task.run(task_id)
         rval.next()
         self.assertTrue(task.exists(task_id))
         self.assertFalse(task.is_complete(task_id))
@@ -142,7 +149,8 @@ class TaskTestCase(unittest.TestCase):
         self.assertTrue(task.is_complete(task_id))
 
     def test_complex_task(self):
-        task_id, rval = complex_task(10)
+        task_id = complex_task(10)
+        rval = task.run(task_id)
         self.assertTrue(task.exists(task_id))
         self.assertFalse(task.is_complete(task_id))
         total = 0
@@ -156,12 +164,14 @@ class TaskTestCase(unittest.TestCase):
         self.assertRaises(StopIteration, rval.next)
         self.assertTrue(task.exists(task_id))
         self.assertTrue(task.is_complete(task_id))
-        task_id, rval = complex_task(10)
+        task_id = complex_task(10)
+        rval = task.run(task_id)
         self.assertEqual(total, sum(list(rval)))
 
     def test_object_retry(self):
         obj = ObjectWithTasks(42)
-        task_id, _ = obj.retry_value()
+        task_id = obj.retry_value()
+        task.run(task_id)
         self.assertTrue(task.exists(task_id))
         self.assertFalse(task.is_complete(task_id))
         value = task.run(task_id)
@@ -171,7 +181,8 @@ class TaskTestCase(unittest.TestCase):
 
     def test_object_retry_deleted_object(self):
         obj = ObjectWithTasks(42)
-        task_id, _ = obj.retry_value()
+        task_id = obj.retry_value()
+        task.run(task_id)
         self.assertTrue(task.exists(task_id))
         self.assertFalse(task.is_complete(task_id))
         del obj
@@ -182,23 +193,28 @@ class TaskTestCase(unittest.TestCase):
 
     def test_retry_same_args(self):
         args = (75, 'arbitrary', {'more': 7.5})
-        task_id, _ = retry(*args)
+        task_id = manual_retry(*args)
+        task.run(task_id)
         ret, _ = task.run(task_id)
         self.assertEqual(args, ret)
 
     def test_retry_same_kwargs(self):
         kwargs = {'num': 75, 'str': 'arbitrary', 'dict': {'more': 7.5}}
-        task_id, _ = retry(**kwargs)
+        task_id = manual_retry(**kwargs)
+        task.run(task_id)
         _, ret = task.run(task_id)
         self.assertEqual(kwargs, ret)
 
     def test_rerun_old_tasks(self):
         mock_datetime.set_time_override()
         try:
-            task_id1, _ = retry()
-            task_id2, _ = retry()
+            task_id1 = manual_retry()
+            task.run(task_id1)
+            task_id2 = manual_retry()
+            task.run(task_id2)
             mock_datetime.advance_time_seconds(60)
-            task_id3, _ = retry()
+            task_id3 = manual_retry()
+            task.run(task_id3)
             self.assertFalse(task.is_complete(task_id1))
             task.run(task_id1)
             import logging

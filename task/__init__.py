@@ -79,6 +79,19 @@ def ify(name=None, auto_update=True):
             if 'task_id' in kwargs:
                 task_id = kwargs.pop('task_id')
                 progress = kwargs.pop('progress')
+                rv = func(task_id=task_id, progress=progress, *args, **kwargs)
+                if auto_update:
+                    if isinstance(rv, types.GeneratorType):
+                        def gen():
+                            for orig_rv in rv:
+                                update(task_id, orig_rv)
+                                yield orig_rv
+                            finish(task_id)
+                        return gen()
+                    else:
+                        update(task_id, rv)
+                        finish(task_id)
+                return rv
             else:
                 task_name = name or func.__name__
                 if _is_member(wrapped, args):
@@ -89,18 +102,7 @@ def ify(name=None, auto_update=True):
                     is_member = False
                 task_id = _create(task_name, method, is_member,
                                   *args, **kwargs)
-                progress = None
-            rv = func(task_id=task_id, progress=progress, *args, **kwargs)
-            if auto_update:
-                if isinstance(rv, types.GeneratorType):
-                    def gen():
-                        for orig_rv in rv:
-                            update(task_id, orig_rv)
-                            yield orig_rv
-                        finish(task_id)
-                    return task_id, gen()
-                update(task_id, rv)
-            return task_id, rv
+                return task_id
         return wrapped
     return wrapper
 
@@ -139,7 +141,7 @@ def run(task_id):
         db.task_update(task_id, {'updated_at': _now()})
     # NOTE(vish): the [1] is because we don't return the task_id
     return method(task_id=task['id'], progress=task['progress'],
-                  *task['args'], **task['kwargs'])[1]
+                  *task['args'], **task['kwargs'])
 
 
 def update(task_id, progress):
